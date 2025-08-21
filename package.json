@@ -1,0 +1,74 @@
+{
+    "name": "ProteusPOS-helper",
+    "version": "1.0.0",
+    "description": "Proteus POS Companion",
+    "main": "main.js",
+    "author": "ProteusERP",
+    "license": "MIT",
+    "scripts": {
+        "start": "electron .",
+        "start-hidden": "electron . --hidden",
+        "dev": "electron . --dev",
+        "build": "electron-builder",
+        "build-win": "electron-builder --win",
+        "build-mac": "electron-builder --mac",
+        "build-linux": "electron-builder --linux",
+        "pack": "electron-builder --dir",
+        "dist": "npm run build"
+    },
+    "keywords": [
+        "pos",
+        "receipt-printer",
+        "cash-drawer",
+        "qz-tray",
+        "electron",
+        "websocket",
+        "system-tray"
+    ],
+    "dependencies": {
+        "node-thermal-printer": "^4.4.4",
+        "ws": "^8.14.2"
+    },
+    "devDependencies": {
+        "electron": "^27.3.11",
+        "electron-builder": "^24.6.4"
+    },
+    "build": {
+        "appId": "com.proteuserp.pos-helper",
+        "productName": "Proteus POS Companion",
+        "directories": {
+            "output": "dist"
+        },
+        "files": [
+            "main.js",
+            "index.html",
+            "assets/**/*",
+            "temp/**/*",
+            "node_modules/**/*"
+        ],
+        "win": {
+            "target": "nsis",
+            "icon": "assets/icon.ico"
+        },
+        "mac": {
+            "target": "dmg",
+            "icon": "assets/icon.icns",
+            "category": "public.app-category.business"
+        },
+        "linux": {
+            "target": "AppImage",
+            "icon": "assets/icon.png",
+            "category": "Office"
+        },
+        "nsis": {
+            "oneClick": false,
+            "allowToChangeInstallationDirectory": true,
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true,
+            "shortcutName": "Proteus POS Companion",
+            "runAfterFinish": true,
+            "installerSidebar": "assets/installer-sidebar.bmp"
+        }
+    },
+    "homepage": "https://proteuserp.com"
+}

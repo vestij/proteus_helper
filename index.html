@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProteusERP Helper</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            background: white;
+            min-height: 100vh;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            position: relative;
+        }
+
+        .header img {
+            max-width: 130px;
+            margin-bottom: 5px;
+        }
+
+        .header .subtitle {
+            font-size: 12px;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+
+        .status-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4CAF50;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .content {
+            padding: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border: 1px solid #f0f0f0;
+        }
+
+        .card h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 16px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .icon {
+            width: 20px;
+            height: 20px;
+            display: inline-block;
+        }
+
+        select, button, input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+        }
+
+        select:focus, button:focus, input:focus {
+            outline: none;
+            border-color: #4facfe;
+            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+        }
+
+        button {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(79, 172, 254, 0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .button-group button {
+            flex: 1;
+        }
+
+        .log {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #666;
+            margin-top: 15px;
+            border: 1px solid #e9ecef;
+            display: none;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-radius: 4px;
+        }
+
+        .log-entry.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .log-entry.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .log-entry.info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .connection-status {
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .connection-status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .connection-status.waiting {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .drawer-info {
+            font-family: 'Courier New', monospace;
+            display: none;
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .saved-indicator {
+            color: #4CAF50;
+            font-size: 12px;
+            font-weight: normal;
+            margin-left: auto;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .version {
+            text-align: center;
+            color: #999;
+            font-size: 11px;
+            margin-top: 20px;
+            padding: 10px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .clickable-header {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .toggle-hint {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-left: auto;
+            font-weight: normal;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="status-indicator" id="statusIndicator"></div>
+            <img src="https://dev4.proteuserp.com/proteus/admin/interfaces/4/images/proteuslogo_black.png" alt="Proteus ERP">
+            <div class="subtitle">POS Companion</div>
+        </div>
+
+        <div class="content">
+            <div class="connection-status connected" id="connectionStatus">
+                <span>🟢 WebSocket Server Running (Port 8012)</span>
+            </div>
+
+            <div class="card">
+                <h3>
+                    <span class="icon">⚙️</span>
+                    API Configuration
+                </h3>
+                <input type="text" id="baseUrlInput" placeholder="Base URL (e.g., https://api.proteuserp.com/yourcompany)">
+                <input type="password" id="apiKeyInput" placeholder="API Key">
+                <div class="button-group">
+                    <button id="saveApiConfig">💾 Save Config</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>
+                    <span class="icon">🖨️</span>
+                    Printer Management
+                    <span class="saved-indicator" id="savedIndicator" style="display: none;">✅ Saved</span>
+                </h3>
+                <select id="printerSelect">
+                    <option value="">Select a printer...</option>
+                </select>
+                <button id="refreshPrinters">🔄 Refresh Printers</button>
+                <div class="button-group">
+                    <button id="testPrint">🧾 Test Print</button>
+                    <button id="testDrawer">💰 Open Drawer</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>
+                    <span class="icon">💰</span>
+                    Cash Drawer Assignment
+                </h3>
+                <select id="drawerSelect" disabled>
+                    <option value="">Configure API first...</option>
+                </select>
+                <button id="refreshDrawers" disabled>🔄 Refresh from API</button>
+                <div class="drawer-info" id="drawerInfo"></div>
+            </div>
+
+            <div class="card">
+                <h3>
+                    <span class="icon">📊</span>
+                    System Status
+                </h3>
+                <div class="button-group">
+                    <button id="clearLog">🗑️ Clear Log</button>
+                    <button id="inspectElement">🔍 Inspect Element</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 class="clickable-header" id="logToggle">
+                    <span class="icon">📝</span>
+                    Activity Log
+                    <span class="toggle-hint">Click to toggle</span>
+                </h3>
+                <div class="log" id="activityLog">
+                    <div class="log-entry info">ProteusERP Helper started successfully</div>
+                    <div class="log-entry info">WebSocket server listening on port 8012</div>
+                </div>
+            </div>
+
+            <div class="version">
+                Version 1.0.0 | ProteusERP Helper
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        // DOM elements
+        const baseUrlInput = document.getElementById('baseUrlInput');
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const saveApiConfig = document.getElementById('saveApiConfig');
+        const printerSelect = document.getElementById('printerSelect');
+        const refreshPrinters = document.getElementById('refreshPrinters');
+        const testPrint = document.getElementById('testPrint');
+        const testDrawer = document.getElementById('testDrawer');
+        const drawerSelect = document.getElementById('drawerSelect');
+        const refreshDrawers = document.getElementById('refreshDrawers');
+        const drawerInfo = document.getElementById('drawerInfo');
+        const clearLog = document.getElementById('clearLog');
+        const inspectElement = document.getElementById('inspectElement');
+        const activityLog = document.getElementById('activityLog');
+        const logToggle = document.getElementById('logToggle');
+        const savedIndicator = document.getElementById('savedIndicator');
+
+        // Listen for connection status updates
+        ipcRenderer.on('connection-status-update', (event, status) => {
+          const statusEl = document.getElementById('connectionStatus');
+          if (status.clients > 0) {
+            statusEl.innerHTML = `🟢 WebSocket Server Running - ${status.clients} client(s) connected`;
+            statusEl.className = 'connection-status connected';
+          } else {
+            statusEl.innerHTML = '🟡 WebSocket Server Running - Waiting for connections';
+            statusEl.className = 'connection-status waiting';
+          }
+        });
+
+        // Auto-update check
+        async function checkForUpdates() {
+          try {
+            const response = await fetch('https://api.github.com/repos/vestij/proteus_helper/releases/latest');
+            const latest = await response.json();
+            const currentVersion = '1.0.0';
+            
+            if (latest.tag_name !== `v${currentVersion}` && latest.tag_name !== currentVersion) {
+              addLogEntry(`Update available: ${latest.tag_name} (current: v${currentVersion})`, 'info');
+              showNotification('Update Available', `Version ${latest.tag_name} is available on GitHub`, 'info');
+            } else {
+              addLogEntry('App is up to date', 'success');
+            }
+          } catch (error) {
+            console.log('Update check failed:', error);
+            addLogEntry('Could not check for updates', 'error');
+          }
+        }
+
+        // Show notification
+        function showNotification(title, message, type = 'info') {
+          if (window.Notification && Notification.permission === 'granted') {
+            new Notification(title, {
+              body: message,
+              icon: 'assets/tray-icon.png'
+            });
+          }
+          addLogEntry(`${title}: ${message}`, type);
+        }
+
+        // Request notification permission on startup
+        if (window.Notification && Notification.permission === 'default') {
+          Notification.requestPermission();
+        }
+
+        // Utility functions
+        function addLogEntry(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
+            activityLog.appendChild(entry);
+            activityLog.scrollTop = activityLog.scrollHeight;
+        }
+
+        function setButtonLoading(button, loading) {
+            if (loading) {
+                button.disabled = true;
+                const originalText = button.textContent;
+                button.setAttribute('data-original-text', originalText);
+                button.textContent = 'Loading...';
+            } else {
+                button.disabled = false;
+                const originalText = button.getAttribute('data-original-text');
+                if (originalText) {
+                    button.textContent = originalText;
+                }
+            }
+        }
+
+        // Toggle activity log visibility
+        function toggleActivityLog() {
+            const currentDisplay = window.getComputedStyle(activityLog).display;
+            if (currentDisplay === 'none') {
+                activityLog.style.display = 'block';
+            } else {
+                activityLog.style.display = 'none';
+            }
+        }
+
+        // Open inspect element / developer tools
+        function openInspectElement() {
+            try {
+                ipcRenderer.invoke('open-devtools');
+                addLogEntry('Requested developer tools to open', 'success');
+            } catch (error) {
+                addLogEntry('Could not open developer tools', 'error');
+            }
+        }
+
+        // Save configuration to file
+        async function saveConfiguration() {
+            const config = {
+                selectedPrinter: localStorage.getItem('selectedPrinter'),
+                selectedDrawer: localStorage.getItem('selectedDrawer'),
+                selectedDrawerId: localStorage.getItem('selectedDrawer'),
+                drawerInfo: getSelectedDrawerInfo(),
+                apiBaseUrl: localStorage.getItem('apiBaseUrl'),
+                lastUpdated: new Date().toISOString()
+            };
+            
+            try {
+                await ipcRenderer.invoke('save-config', config);
+            } catch (error) {
+                console.error('Failed to save configuration:', error);
+            }
+        }
+
+        // Get selected drawer info
+        function getSelectedDrawerInfo() {
+            const selectedOption = drawerSelect.options[drawerSelect.selectedIndex];
+            if (selectedOption && selectedOption.dataset.drawerData) {
+                return JSON.parse(selectedOption.dataset.drawerData);
+            }
+            return null;
+        }
+
+        // Show drawer info
+        function showDrawerInfo() {
+            const selectedOption = drawerSelect.options[drawerSelect.selectedIndex];
+            if (selectedOption && selectedOption.dataset.drawerData) {
+                const drawer = JSON.parse(selectedOption.dataset.drawerData);
+                
+                drawerInfo.innerHTML = `
+                    <strong>Drawer Details:</strong><br>
+                    ID: ${drawer.ID}<br>
+                    Name: ${drawer.NAME}<br>
+                    Location ID: ${drawer.LOCATION_ID}<br>
+                    Terminal ID: ${drawer.TERMINAL_ID || 'None'}<br>
+                    Customer Facing: ${drawer.CUSTOMERFACING ? 'Yes' : 'No'}
+                `;
+                drawerInfo.style.display = 'block';
+            } else {
+                drawerInfo.style.display = 'none';
+            }
+        }
+
+        // Load API config
+        function loadApiConfig() {
+            const savedBaseUrl = localStorage.getItem('apiBaseUrl');
+            const savedApiKey = localStorage.getItem('apiKey');
+            
+            if (savedBaseUrl) baseUrlInput.value = savedBaseUrl;
+            if (savedApiKey) apiKeyInput.value = savedApiKey;
+            
+            if (savedBaseUrl && savedApiKey) {
+                enableDrawerFunctionality();
+            }
+        }
+
+        // Enhanced API input validation
+        function validateApiConfig(baseUrl, apiKey) {
+          const errors = [];
+          
+          if (!baseUrl.trim()) {
+            errors.push('Base URL is required');
+          } else {
+            try {
+              const url = new URL(baseUrl);
+              if (!url.protocol.startsWith('http')) {
+                errors.push('Base URL must start with http:// or https://');
+              }
+            } catch (e) {
+              errors.push('Invalid Base URL format');
+            }
+          }
+          
+          if (!apiKey.trim()) {
+            errors.push('API Key is required');
+          } else if (apiKey.length < 10) {
+            errors.push('API Key seems too short (minimum 10 characters)');
+          }
+          
+          return errors;
+        }
+
+        // Save API config with validation
+        function saveApiConfiguration() {
+            const baseUrl = baseUrlInput.value.trim();
+            const apiKey = apiKeyInput.value.trim();
+            
+            const errors = validateApiConfig(baseUrl, apiKey);
+            if (errors.length > 0) {
+                errors.forEach(error => addLogEntry(error, 'error'));
+                return;
+            }
+            
+            localStorage.setItem('apiBaseUrl', baseUrl);
+            localStorage.setItem('apiKey', apiKey);
+            addLogEntry('API configuration saved successfully', 'success');
+            enableDrawerFunctionality();
+        }
+
+        // Enable drawer functionality
+        function enableDrawerFunctionality() {
+            drawerSelect.disabled = false;
+            refreshDrawers.disabled = false;
+            loadCachedDrawers();
+        }
+
+        // Improved cache handling with expiration
+        function loadCachedDrawers() {
+            addLogEntry('Checking for cached drawers...', 'info');
+            const cachedData = localStorage.getItem('drawerCache');
+            
+            if (cachedData) {
+                try {
+                    const cache = JSON.parse(cachedData);
+                    
+                    if (cache.expires && Date.now() > cache.expires) {
+                        addLogEntry('Drawer cache expired (24+ hours old), clearing...', 'info');
+                        localStorage.removeItem('drawerCache');
+                        drawerSelect.innerHTML = '<option value="">Cache expired - Click "Refresh from API"</option>';
+                        return false;
+                    }
+                    
+                    const drawers = cache.drawers || cache;
+                    const cacheAge = cache.timestamp ? Math.round((Date.now() - cache.timestamp) / (1000 * 60)) : 'unknown';
+                    
+                    addLogEntry(`Found cached drawer data (${cacheAge} minutes old)`, 'success');
+                    populateDrawerDropdown(drawers);
+                    addLogEntry(`Loaded ${drawers.length} cached drawers`, 'success');
+                    return true;
+                } catch (e) {
+                    addLogEntry('Error parsing cached drawers, clearing cache: ' + e.message, 'error');
+                    localStorage.removeItem('drawerCache');
+                }
+            } else {
+                addLogEntry('No cached drawers found', 'info');
+            }
+            
+            drawerSelect.innerHTML = '<option value="">Click "Refresh from API" to load drawers</option>';
+            return false;
+        }
+
+        // Populate drawer dropdown
+        function populateDrawerDropdown(drawers) {
+            addLogEntry('Populating drawer dropdown...', 'info');
+            drawerSelect.innerHTML = '<option value="">Select a cash drawer...</option>';
+            
+            drawers.forEach(drawer => {
+                const option = document.createElement('option');
+                option.value = drawer.ID.toString();
+                option.textContent = `${drawer.NAME} - Location ${drawer.LOCATION_ID}`;
+                option.dataset.drawerData = JSON.stringify(drawer);
+                drawerSelect.appendChild(option);
+            });
+            
+            addLogEntry(`Added ${drawers.length} options to dropdown`, 'info');
+            
+            const savedDrawer = localStorage.getItem('selectedDrawer');
+            if (savedDrawer) {
+                addLogEntry(`Attempting to restore drawer: ${savedDrawer}`, 'info');
+                drawerSelect.value = savedDrawer;
+                if (drawerSelect.value === savedDrawer) {
+                    addLogEntry(`✅ Successfully restored drawer selection!`, 'success');
+                    showDrawerInfo();
+                } else {
+                    addLogEntry(`❌ Could not restore drawer ${savedDrawer}`, 'error');
+                }
+            }
+        }
+
+        // Enhanced drawer loading with better error handling
+        async function loadDrawersFromAPI() {
+            const baseUrl = localStorage.getItem('apiBaseUrl');
+            const apiKey = localStorage.getItem('apiKey');
+            
+            if (!baseUrl || !apiKey) {
+                addLogEntry('API configuration missing - please configure API settings first', 'error');
+                return;
+            }
+            
+            addLogEntry('Starting API call to load drawers...', 'info');
+            setButtonLoading(refreshDrawers, true);
+            
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
+                
+                const response = await fetch(`${baseUrl}/webservices/drawers/`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                addLogEntry(`API response status: ${response.status} ${response.statusText}`, 'info');
+                
+                if (response.ok) {
+                    const apiResponse = await response.json();
+                    addLogEntry(`API SUCCESS: ${apiResponse.SUCCESS}`, 'info');
+                    
+                    if (apiResponse.SUCCESS && apiResponse.DATA) {
+                        const drawers = apiResponse.DATA;
+                        addLogEntry(`Found ${drawers.length} drawers in API response`, 'info');
+                        
+                        const cacheData = {
+                          drawers: drawers,
+                          timestamp: Date.now(),
+                          expires: Date.now() + (24 * 60 * 60 * 1000)
+                        };
+                        
+                        addLogEntry('Caching drawer data...', 'info');
+                        try {
+                            localStorage.setItem('drawerCache', JSON.stringify(cacheData));
+                            addLogEntry('✅ Drawers cached successfully!', 'success');
+                        } catch (cacheError) {
+                            addLogEntry('❌ Failed to cache drawers: ' + cacheError.message, 'error');
+                        }
+                        
+                        populateDrawerDropdown(drawers);
+                        addLogEntry(`Successfully loaded ${drawers.length} drawers from API`, 'success');
+                    } else {
+                        const errorMsg = apiResponse.ERROR || 'API returned no drawer data';
+                        addLogEntry(`API Error: ${errorMsg}`, 'error');
+                    }
+                } else if (response.status === 401) {
+                    addLogEntry('API authentication failed - please check your API key', 'error');
+                } else if (response.status === 404) {
+                    addLogEntry('API endpoint not found - please check your base URL', 'error');
+                } else {
+                    addLogEntry(`API HTTP Error: ${response.status} ${response.statusText}`, 'error');
+                }
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    addLogEntry('API request timed out after 15 seconds - please check your connection', 'error');
+                } else if (error.message.includes('fetch')) {
+                    addLogEntry('Network error: Unable to connect to API - please check your base URL and internet connection', 'error');
+                } else {
+                    addLogEntry(`Network error: ${error.message}`, 'error');
+                }
+            } finally {
+                setButtonLoading(refreshDrawers, false);
+            }
+        }
+
+        // Enhanced printer loading with auto-detection
+        async function loadPrinters() {
+            setButtonLoading(refreshPrinters, true);
+            try {
+                const result = await ipcRenderer.invoke('get-printers');
+                
+                printerSelect.innerHTML = '<option value="">Select a printer...</option>';
+                
+                if (result.success && result.data.printers) {
+                    result.data.printers.forEach(printer => {
+                        const option = document.createElement('option');
+                        option.value = printer.name;
+                        option.textContent = `${printer.name} (${printer.status})`;
+                        printerSelect.appendChild(option);
+                    });
+                    
+                    const savedPrinter = localStorage.getItem('selectedPrinter');
+                    if (savedPrinter) {
+                        printerSelect.value = savedPrinter;
+                    }
+                    
+                    addLogEntry(`Found ${result.data.printers.length} printers`, 'success');
+                    
+                    if (!savedPrinter) {
+                        detectAndSelectPrinter(result.data.printers);
+                    }
+                } else {
+                    addLogEntry('No printers found - please check if printers are installed', 'error');
+                }
+            } catch (error) {
+                addLogEntry('Error loading printers: ' + error.message, 'error');
+            } finally {
+                setButtonLoading(refreshPrinters, false);
+            }
+        }
+
+        // Auto-detect and select appropriate printer
+        function detectAndSelectPrinter(printers) {
+            if (!printers || printers.length === 0) return;
+            
+            if (printers.length === 1) {
+                const printer = printers[0];
+                printerSelect.value = printer.name;
+                localStorage.setItem('selectedPrinter', printer.name);
+                addLogEntry(`Auto-selected only available printer: ${printer.name}`, 'success');
+                showPrinterSavedIndicator();
+                return;
+            }
+            
+            const receiptPrinterKeywords = ['receipt', 'pos', 'thermal', 'epson', 'star', 'citizen'];
+            const receiptPrinter = printers.find(p => {
+                const name = p.name.toLowerCase();
+                return receiptPrinterKeywords.some(keyword => name.includes(keyword));
+            });
+            
+            if (receiptPrinter) {
+                printerSelect.value = receiptPrinter.name;
+                localStorage.setItem('selectedPrinter', receiptPrinter.name);
+                addLogEntry(`Auto-detected receipt printer: ${receiptPrinter.name}`, 'success');
+                showPrinterSavedIndicator();
+                return;
+            }
+            
+            const readyPrinter = printers.find(p => p.status.toLowerCase().includes('ready'));
+            if (readyPrinter) {
+                printerSelect.value = readyPrinter.name;
+                localStorage.setItem('selectedPrinter', readyPrinter.name);
+                addLogEntry(`Auto-selected ready printer: ${readyPrinter.name}`, 'success');
+                showPrinterSavedIndicator();
+                return;
+            }
+            
+            addLogEntry(`Found ${printers.length} printers but could not auto-detect receipt printer`, 'info');
+        }
+
+        // Show printer saved indicator
+        function showPrinterSavedIndicator() {
+            savedIndicator.style.display = 'inline';
+            setTimeout(() => { savedIndicator.style.display = 'none'; }, 3000);
+        }
+
+        // Test print function
+        async function performTestPrint() {
+            const selectedPrinter = printerSelect.value;
+            if (!selectedPrinter) {
+                addLogEntry('Please select a printer first before testing print', 'error');
+                return;
+            }
+
+            addLogEntry(`Sending test print to: ${selectedPrinter}`, 'info');
+            setButtonLoading(testPrint, true);
+            try {
+                const result = await ipcRenderer.invoke('test-print', selectedPrinter);
+                if (result.success) {
+                    addLogEntry(`✅ Test print sent successfully to ${selectedPrinter}`, 'success');
+                    showNotification('Print Success', `Test print sent to ${selectedPrinter}`, 'success');
+                } else {
+                    addLogEntry(`❌ Print failed: ${result.error}`, 'error');
+                    showNotification('Print Failed', result.error, 'error');
+                }
+            } catch (error) {
+                addLogEntry(`❌ Print error: ${error.message}`, 'error');
+                showNotification('Print Error', error.message, 'error');
+            } finally {
+                setButtonLoading(testPrint, false);
+            }
+        }
+
+        // Test cash drawer function
+        async function performTestDrawer() {
+            const selectedPrinter = printerSelect.value;
+            if (!selectedPrinter) {
+                addLogEntry('Please select a printer first before opening cash drawer', 'error');
+                return;
+            }
+
+            addLogEntry(`Attempting to open cash drawer via: ${selectedPrinter}`, 'info');
+            setButtonLoading(testDrawer, true);
+            try {
+                const result = await ipcRenderer.invoke('test-cash-drawer', selectedPrinter);
+                if (result.success) {
+                    addLogEntry(`✅ Cash drawer command sent successfully via ${selectedPrinter}`, 'success');
+                    showNotification('Drawer Opened', `Cash drawer opened via ${selectedPrinter}`, 'success');
+                } else {
+                    addLogEntry(`❌ Cash drawer failed: ${result.error}`, 'error');
+                    showNotification('Drawer Failed', result.error, 'error');
+                }
+            } catch (error) {
+                addLogEntry(`❌ Cash drawer error: ${error.message}`, 'error');
+                showNotification('Drawer Error', error.message, 'error');
+            } finally {
+                setButtonLoading(testDrawer, false);
+            }
+        }
+
+        // Clear log
+        function clearActivityLog() {
+            activityLog.innerHTML = '';
+            addLogEntry('Activity log cleared', 'info');
+        }
+
+        // Event listeners
+        saveApiConfig.addEventListener('click', saveApiConfiguration);
+        refreshPrinters.addEventListener('click', loadPrinters);
+        testPrint.addEventListener('click', performTestPrint);
+        testDrawer.addEventListener('click', performTestDrawer);
+        refreshDrawers.addEventListener('click', loadDrawersFromAPI);
+        clearLog.addEventListener('click', clearActivityLog);
+        inspectElement.addEventListener('click', openInspectElement);
+        logToggle.addEventListener('click', toggleActivityLog);
+
+        // Save selections
+        printerSelect.addEventListener('change', () => {
+            const selectedPrinter = printerSelect.value;
+            if (selectedPrinter) {
+                localStorage.setItem('selectedPrinter', selectedPrinter);
+                showPrinterSavedIndicator();
+                saveConfiguration();
+                addLogEntry(`Printer selected: ${selectedPrinter}`, 'success');
+            } else {
+                localStorage.removeItem('selectedPrinter');
+                saveConfiguration();
+            }
+        });
+
+        drawerSelect.addEventListener('change', () => {
+            const selectedDrawer = drawerSelect.value;
+            if (selectedDrawer) {
+                localStorage.setItem('selectedDrawer', selectedDrawer);
+                addLogEntry(`Cash drawer saved: ID ${selectedDrawer}`, 'success');
+                showDrawerInfo();
+                saveConfiguration();
+            } else {
+                localStorage.removeItem('selectedDrawer');
+                drawerInfo.style.display = 'none';
+                saveConfiguration();
+            }
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadApiConfig();
+            loadPrinters();
+            addLogEntry('ProteusERP Helper interface loaded', 'success');
+            
+            setTimeout(() => {
+                addLogEntry('Checking for updates...', 'info');
+                checkForUpdates();
+            }, 3000);
+            
+            setInterval(() => {
+                if (!localStorage.getItem('selectedPrinter')) {
+                    addLogEntry('Auto-refreshing printers (no printer selected)...', 'info');
+                    loadPrinters();
+                }
+            }, 120000);
+        });
+    </script>
+</body>
+</html>
