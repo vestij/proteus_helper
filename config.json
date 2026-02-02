@@ -1,15 +1,17 @@
 {
-  "selectedPrinter": "EPSON TM-m30 Receipt",
+  "selectedPrinter": "EPSON TM-m30II Receipt",
   "selectedDrawer": "49",
   "selectedDrawerId": "49",
+  "selectedScanner": "NPI45B4BA (HP Color LaserJet MFP M477fdw)_Scanner",
   "drawerInfo": {
     "DADDED": "2024-09-11T15:39:31",
     "LOCATION_ID": 1,
     "ID": 49,
     "TERMINAL_ID": "N500X410522",
-    "CUSTOMERFACING": 1,
+    "CUSTOMERFACING": 0,
     "NAME": "Cash Drawer 01"
   },
   "apiBaseUrl": "https://dev4.proteuserp.com/420demo",
-  "lastUpdated": "2025-07-22T06:26:06.396Z"
+  "apiKey": "3xOSzKDTQXlmys0yRLoVVwJoa",
+  "lastUpdated": "2025-12-19T08:07:53.615Z"
 }

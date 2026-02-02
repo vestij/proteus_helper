@@ -3,8 +3,12 @@ const path = require('path');
 
 // Keep a global reference of the window object and tray
 let mainWindow;
+let emergencyWindow;
 let tray;
 let wsServer;
+let scannerService;
+let transactionQueueService;
+let productCacheService;
 
 // Set up logging for built app
 if (!app.isPackaged) {
@@ -183,6 +187,9 @@ const fs = require('fs');
 const { exec } = require('child_process');
 const WebSocket = require('ws');
 const { electron } = require('process');
+const ScannerService = require('./scanner-service');
+const TransactionQueueService = require('./transaction-queue-service');
+const ProductCacheService = require('./product-cache-service');
 
 // Try to load thermal printer library (optional)
 let ThermalPrinter;
@@ -1041,6 +1048,61 @@ function initializeWebSocketServer() {
                 console.log('Handling getStatus action...');
                 response = { success: true, data: { status: 'ready', version: '1.0.0' } };
                 break;
+            case 'getScanners':
+                console.log('Handling getScanners action...');
+                response = await scannerService.detectScanners();
+                break;
+            case 'scan':
+                console.log('Handling scan action...');
+                response = await handleScanRequest(data);
+                break;
+            case 'scanAndUpload':
+                console.log('Handling scanAndUpload action...');
+                response = await handleScanAndUpload(data);
+                break;
+            case 'scanToFolder':
+                console.log('Handling scanToFolder action...');
+                response = await handleScanToFolder(data);
+                break;
+            case 'getScanSettings':
+                console.log('Handling getScanSettings action...');
+                response = { success: true, data: scannerService.getScanSettings() };
+                break;
+            case 'updateScanSettings':
+                console.log('Handling updateScanSettings action...');
+                scannerService.updateScanSettings(data.settings || {});
+                response = { success: true, data: scannerService.getScanSettings() };
+                break;
+            // Transaction Queue Actions
+            case 'submitTransaction':
+                console.log('Handling submitTransaction action...');
+                response = await transactionQueueService.submitTransaction({
+                    idempotencyKey: data.idempotencyKey,
+                    type: data.type,
+                    data: data.data
+                });
+                break;
+            case 'getQueueStatus':
+                console.log('Handling getQueueStatus action...');
+                response = await transactionQueueService.getQueueStatus();
+                break;
+            case 'retryQueue':
+                console.log('Handling retryQueue action...');
+                response = await transactionQueueService.processQueue();
+                response.success = true;
+                break;
+            case 'getQueuedTransactions':
+                console.log('Handling getQueuedTransactions action...');
+                response = await transactionQueueService.getQueuedTransactions(data.limit || 50);
+                break;
+            case 'cancelTransaction':
+                console.log('Handling cancelTransaction action...');
+                response = await transactionQueueService.cancelTransaction(data.transactionId);
+                break;
+            case 'retryTransaction':
+                console.log('Handling retryTransaction action...');
+                response = await transactionQueueService.retryTransaction(data.transactionId);
+                break;
             default:
                 console.log('Unknown action:', data.action);
                 response = { success: false, error: 'Unknown action: ' + data.action };
@@ -1070,6 +1132,207 @@ function initializeWebSocketServer() {
   
   // Start connection monitoring every 5 seconds
   setInterval(updateConnectionStatus, 5000);
+}
+
+// Handle scan request via WebSocket
+async function handleScanRequest(data) {
+  try {
+    const scannerId = data.scannerId || data.scanner;
+    const options = data.options || {};
+    
+    if (!scannerId) {
+      return { success: false, error: 'Scanner ID is required for scanning' };
+    }
+    
+    console.log(`Scanning with device: ${scannerId}`);
+    console.log('Scan options:', options);
+    
+    const result = await scannerService.performScan(scannerId, options);
+    
+    if (result.success) {
+      console.log('Scan completed successfully');
+      return {
+        success: true,
+        data: {
+          ...result.data,
+          message: 'Document scanned successfully'
+        }
+      };
+    } else {
+      console.error('Scan failed:', result.error);
+      return result;
+    }
+    
+  } catch (error) {
+    console.error('Error in handleScanRequest:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Handle scan and upload request via WebSocket
+async function handleScanAndUpload(data) {
+  try {
+    const scannerId = data.scannerId || data.scanner;
+    const options = data.options || {};
+    const metadata = data.metadata || {};
+    
+    if (!scannerId) {
+      return { success: false, error: 'Scanner ID is required for scanning' };
+    }
+    
+    // Get API configuration
+    const config = await getConfiguration();
+    if (!config.success || !config.data.apiBaseUrl) {
+      return { success: false, error: 'API configuration not found. Please configure API settings first.' };
+    }
+    
+    const apiKey = config.data.apiKey || data.apiKey;
+    if (!apiKey) {
+      return { success: false, error: 'API key not found. Please configure API settings first.' };
+    }
+    
+    console.log(`Scanning and uploading with device: ${scannerId}`);
+    
+    // Step 1: Perform scan
+    const scanResult = await scannerService.performScan(scannerId, options);
+    if (!scanResult.success) {
+      return scanResult;
+    }
+    
+    console.log('Scan completed, now uploading to SaaS...');
+    
+    // Step 2: Upload to SaaS
+    const uploadResult = await scannerService.uploadToSaaS(
+      scanResult.data.filepath,
+      config.data.apiBaseUrl,
+      apiKey,
+      {
+        ...metadata,
+        scanner_id: scannerId,
+        scan_settings: options
+      }
+    );
+    
+    if (uploadResult.success) {
+      return {
+        success: true,
+        data: {
+          scan: scanResult.data,
+          upload: uploadResult.data,
+          message: 'Document scanned and uploaded successfully'
+        }
+      };
+    } else {
+      // Scan succeeded but upload failed - return both results
+      return {
+        success: false,
+        error: `Scan completed but upload failed: ${uploadResult.error}`,
+        data: {
+          scan: scanResult.data,
+          upload_error: uploadResult.error
+        }
+      };
+    }
+    
+  } catch (error) {
+    console.error('Error in handleScanAndUpload:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Handle scan to folder request from web application
+async function handleScanToFolder(data) {
+  try {
+    let scannerId = data.scannerId;
+    
+    // Auto-select scanner if not specified
+    if (!scannerId || scannerId === 'auto') {
+      const scannersResult = await scannerService.detectScanners();
+      if (scannersResult.success && scannersResult.scanners.length > 0) {
+        // Prefer non-virtual scanners, fallback to virtual
+        const realScanner = scannersResult.scanners.find(s => !s.name.includes('Virtual'));
+        scannerId = realScanner ? realScanner.id : scannersResult.scanners[0].id;
+        console.log(`Auto-selected scanner: ${scannerId}`);
+      } else {
+        return { success: false, error: 'No scanners available for auto-selection' };
+      }
+    }
+    
+    const options = data.options || {};
+    const folderMetadata = {
+      ...data.metadata,
+      source: 'web_application',
+      scan_trigger: 'folder_context',
+      folderId: data.folderId || data.metadata?.folderId,
+      folderName: data.folderName || data.metadata?.folderName
+    };
+    
+    console.log(`Scanning to folder: ${folderMetadata.folderName} (ID: ${folderMetadata.folderId})`);
+    
+    // Get API configuration
+    const config = await getConfiguration();
+    if (!config.success || !config.data.apiBaseUrl) {
+      return { success: false, error: 'API configuration not found. Please configure API settings first.' };
+    }
+    
+    // Get API key from config file
+    let apiKey = null;
+    try {
+      const configFilePath = path.join(__dirname, 'config.json');
+      const configData = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+      apiKey = configData.apiKey;
+    } catch (error) {
+      console.log('Could not read API key from config:', error.message);
+    }
+    
+    if (!apiKey) {
+      return { success: false, error: 'API key not found. Please configure API settings first in the application.' };
+    }
+    
+    // Perform scan
+    const scanResult = await scannerService.performScan(scannerId, options);
+    if (!scanResult.success) {
+      return scanResult;
+    }
+    
+    console.log('Scan completed, uploading to folder context...');
+    
+    // Upload to SaaS with folder context
+    const uploadResult = await scannerService.uploadToSaaS(
+      scanResult.data.filepath,
+      config.data.apiBaseUrl,
+      apiKey,
+      folderMetadata
+    );
+    
+    if (uploadResult.success) {
+      return {
+        success: true,
+        data: {
+          scan: scanResult.data,
+          upload: uploadResult.data,
+          folder: {
+            id: folderMetadata.folderId,
+            name: folderMetadata.folderName
+          },
+          message: `Document scanned and uploaded to folder: ${folderMetadata.folderName}`
+        }
+      };
+    } else {
+      return {
+        success: false,
+        error: `Scan completed but upload failed: ${uploadResult.error}`,
+        data: {
+          scan: scanResult.data,
+          upload_error: uploadResult.error
+        }
+      };
+    }
+    
+  } catch (error) {
+    console.error('Error in handleScanToFolder:', error);
+    return { success: false, error: error.message };
+  }
 }
 
 // Enhanced error handling for print operations
@@ -1804,9 +2067,29 @@ ipcMain.handle('save-config', async (event, config) => {
     const fs = require('fs');
     const path = require('path');
     const configPath = path.join(__dirname, 'config.json');
-    
+
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     console.log('Configuration saved to', configPath);
+
+    // Update transaction queue service with new API config
+    if (transactionQueueService && (config.apiBaseUrl || config.apiKey)) {
+      transactionQueueService.updateConfig({
+        apiBaseUrl: config.apiBaseUrl,
+        apiKey: config.apiKey
+      });
+    }
+
+    // Update product cache service with new config including drawer ID
+    if (productCacheService) {
+      productCacheService.updateConfig({
+        apiBaseUrl: config.apiBaseUrl,
+        apiKey: config.apiKey,
+        drawerId: config.selectedDrawerId || null
+      });
+      // Re-sync settings to get location-specific tax rates
+      productCacheService.syncSettings().catch(err => console.error('Settings re-sync failed:', err));
+    }
+
     return { success: true };
   } catch (error) {
     console.error('Failed to save configuration:', error);
@@ -1823,12 +2106,795 @@ ipcMain.handle('hide-window', () => {
   hideWindow();
 });
 
+// IPC handlers for scanner functionality
+ipcMain.handle('get-scanners', async () => {
+  try {
+    return await scannerService.detectScanners();
+  } catch (error) {
+    console.error('Error getting scanners:', error);
+    return { success: false, error: error.message, scanners: [] };
+  }
+});
+
+ipcMain.handle('test-scan', async (event, scannerId, options = {}) => {
+  console.log('Test scan request received for scanner:', scannerId);
+  
+  if (!scannerId) {
+    return { success: false, error: 'No scanner specified for test scan' };
+  }
+  
+  const testOptions = {
+    resolution: 150, // Lower resolution for faster test
+    colorMode: 'color',
+    format: 'jpeg',
+    quality: 80,
+    ...options
+  };
+  
+  console.log('Test scanning with options:', testOptions);
+  const result = await scannerService.performScan(scannerId, testOptions);
+  
+  console.log('Test scan result:', result);
+  return result;
+});
+
+ipcMain.handle('scan-and-upload', async (event, scannerId, options = {}, metadata = {}) => {
+  console.log('Scan and upload request for scanner:', scannerId);
+  
+  if (!scannerId) {
+    return { success: false, error: 'No scanner specified for scan and upload' };
+  }
+  
+  // Get API configuration
+  const config = await getConfiguration();
+  if (!config.success || !config.data.apiBaseUrl) {
+    return { success: false, error: 'API configuration not found. Please configure API settings first.' };
+  }
+  
+  // Get API key from config file or storage  
+  let apiKey = null;
+  try {
+    const configFilePath = path.join(__dirname, 'config.json');
+    const configData = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+    apiKey = configData.apiKey;
+  } catch (error) {
+    console.log('Could not read API key from config:', error.message);
+  }
+  
+  if (!apiKey) {
+    return { success: false, error: 'API key not found. Please configure API settings first in the application.' };
+  }
+  
+  // Perform scan
+  const scanResult = await scannerService.performScan(scannerId, options);
+  if (!scanResult.success) {
+    return scanResult;
+  }
+  
+  // Upload to SaaS
+  const uploadResult = await scannerService.uploadToSaaS(
+    scanResult.data.filepath,
+    config.data.apiBaseUrl,
+    apiKey || config.data.apiKey,
+    {
+      ...metadata,
+      scanner_id: scannerId,
+      scan_settings: options
+    }
+  );
+  
+  if (uploadResult.success) {
+    return {
+      success: true,
+      data: {
+        scan: scanResult.data,
+        upload: uploadResult.data,
+        message: 'Document scanned and uploaded successfully'
+      }
+    };
+  } else {
+    return {
+      success: false,
+      error: `Scan completed but upload failed: ${uploadResult.error}`,
+      data: {
+        scan: scanResult.data,
+        upload_error: uploadResult.error
+      }
+    };
+  }
+});
+
+ipcMain.handle('get-scan-settings', async () => {
+  return { success: true, data: scannerService.getScanSettings() };
+});
+
+ipcMain.handle('update-scan-settings', async (event, settings) => {
+  try {
+    scannerService.updateScanSettings(settings);
+    return { success: true, data: scannerService.getScanSettings() };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC handlers for transaction queue
+ipcMain.handle('get-queue-status', async () => {
+  if (!transactionQueueService) {
+    return { success: false, error: 'Queue service not initialized' };
+  }
+  return await transactionQueueService.getQueueStatus();
+});
+
+ipcMain.handle('retry-queue', async () => {
+  if (!transactionQueueService) {
+    return { success: false, error: 'Queue service not initialized' };
+  }
+  const result = await transactionQueueService.processQueue();
+  return { success: true, ...result };
+});
+
+ipcMain.handle('get-queued-transactions', async (event, limit = 50) => {
+  if (!transactionQueueService) {
+    return { success: false, error: 'Queue service not initialized' };
+  }
+  return await transactionQueueService.getQueuedTransactions(limit);
+});
+
+ipcMain.handle('cancel-queued-transaction', async (event, transactionId) => {
+  if (!transactionQueueService) {
+    return { success: false, error: 'Queue service not initialized' };
+  }
+  return await transactionQueueService.cancelTransaction(transactionId);
+});
+
+// ==========================================
+// EMERGENCY POS IPC HANDLERS
+// ==========================================
+
+// Open Emergency POS window
+ipcMain.handle('open-emergency-pos', async () => {
+  if (emergencyWindow) {
+    emergencyWindow.focus();
+    return { success: true, message: 'Emergency POS already open' };
+  }
+
+  emergencyWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    minWidth: 1000,
+    minHeight: 600,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    },
+    title: 'Emergency POS - Offline Mode',
+    autoHideMenuBar: true
+  });
+
+  emergencyWindow.loadFile('emergency-pos.html');
+
+  emergencyWindow.on('closed', () => {
+    emergencyWindow = null;
+  });
+
+  return { success: true };
+});
+
+// Emergency POS: Get categories
+ipcMain.handle('emergency-get-categories', async () => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized', categories: [] };
+  }
+  try {
+    const categories = await productCacheService.getCategories();
+    return { success: true, categories };
+  } catch (error) {
+    return { success: false, error: error.message, categories: [] };
+  }
+});
+
+// Emergency POS: Get settings (tax rates, etc.)
+ipcMain.handle('emergency-get-settings', async () => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized', taxRates: { combined: 0 } };
+  }
+  try {
+    const settings = await productCacheService.getSettings();
+    return { success: true, ...settings };
+  } catch (error) {
+    return { success: false, error: error.message, taxRates: { combined: 0 } };
+  }
+});
+
+// Emergency POS: Force sync settings (with debug info)
+ipcMain.handle('emergency-sync-settings', async () => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized', debug: {} };
+  }
+  try {
+    const drawerId = productCacheService.drawerId;
+    const apiBaseUrl = productCacheService.apiBaseUrl;
+    const apiKey = productCacheService.apiKey;
+
+    // Build the URL that will be called
+    let url = `${apiBaseUrl}/webservices/categories_json.cfm?webservicepass=${apiKey ? apiKey.substring(0, 5) + '...' : 'NOT SET'}&action=getSettings`;
+    if (drawerId) {
+      url += `&drawer=${drawerId}`;
+    }
+
+    // Force sync settings AND categories (to get updated addtax_rec values)
+    const settingsSyncResult = await productCacheService.syncSettings();
+    const categorySyncResult = await productCacheService.syncCategories();
+
+    // Get the stored settings
+    const settings = await productCacheService.getSettings();
+
+    return {
+      success: settingsSyncResult.success && categorySyncResult.success,
+      error: settingsSyncResult.error || categorySyncResult.error,
+      settings,
+      debug: {
+        drawerId,
+        apiBaseUrl,
+        apiKeySet: !!apiKey,
+        urlCalled: url,
+        settingsSyncResult,
+        categorySyncResult
+      }
+    };
+  } catch (error) {
+    return { success: false, error: error.message, debug: { error: error.stack } };
+  }
+});
+
+// Emergency POS: Get category tax info
+ipcMain.handle('emergency-get-category-tax', async (event, categoryId) => {
+  if (!productCacheService) {
+    return { addtax: 0, mitsreportable: false };
+  }
+  try {
+    return await productCacheService.getCategoryTaxInfo(categoryId);
+  } catch (error) {
+    console.error('Error getting category tax:', error);
+    return { addtax: 0, mitsreportable: false };
+  }
+});
+
+// Emergency POS: Search products
+ipcMain.handle('emergency-search-products', async (event, query) => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized', products: [] };
+  }
+  try {
+    const products = await productCacheService.searchProducts(query);
+    return { success: true, products };
+  } catch (error) {
+    return { success: false, error: error.message, products: [] };
+  }
+});
+
+// Emergency POS: Get product by UPC
+ipcMain.handle('emergency-get-product-by-upc', async (event, upc) => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized' };
+  }
+  try {
+    const product = await productCacheService.getProductByUPC(upc);
+    return { success: true, product };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Emergency POS: Get product by package ID (for barcode scanning)
+ipcMain.handle('emergency-get-product-by-package', async (event, packageId) => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized' };
+  }
+  try {
+    const product = await productCacheService.getProductByPackageId(packageId);
+    return { success: true, product };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Sync packages from server
+ipcMain.handle('sync-packages', async () => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized' };
+  }
+  try {
+    const result = await productCacheService.syncPackages();
+    return result;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Get package count
+ipcMain.handle('get-package-count', async () => {
+  if (!productCacheService) {
+    return { success: false, count: 0 };
+  }
+  try {
+    const count = await productCacheService.getPackageCount();
+    return { success: true, count };
+  } catch (error) {
+    return { success: false, count: 0, error: error.message };
+  }
+});
+
+// Get packages for a specific product
+ipcMain.handle('get-packages-for-product', async (event, productId) => {
+  if (!productCacheService) {
+    return { success: false, packages: [] };
+  }
+  try {
+    const packages = await productCacheService.getPackagesForProduct(productId);
+    return { success: true, packages };
+  } catch (error) {
+    return { success: false, packages: [], error: error.message };
+  }
+});
+
+// Emergency POS: Get products by category
+ipcMain.handle('emergency-get-products-by-category', async (event, category) => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized', products: [] };
+  }
+  try {
+    const products = await productCacheService.getProductsByCategory(category);
+    return { success: true, products };
+  } catch (error) {
+    return { success: false, error: error.message, products: [] };
+  }
+});
+
+// Emergency POS: Submit transaction (queues locally)
+ipcMain.handle('emergency-submit-transaction', async (event, transaction) => {
+  if (!transactionQueueService) {
+    return { success: false, error: 'Transaction queue not initialized' };
+  }
+  try {
+    // Generate idempotency key for offline transaction
+    const idempotencyKey = `offline-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const result = await transactionQueueService.submitTransaction({
+      idempotencyKey,
+      type: 'sale',
+      data: {
+        ...transaction,
+        offlineMode: true,
+        source: 'emergency_pos'
+      }
+    });
+
+    return result;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Emergency POS: Print receipt
+ipcMain.handle('emergency-print-receipt', async (event, htmlContent) => {
+  try {
+    // Get configured printer
+    const config = await getConfiguration();
+    const printer = config.data?.selectedPrinter;
+
+    if (!printer) {
+      console.log('No printer configured, skipping receipt print');
+      return { success: true, message: 'No printer configured' };
+    }
+
+    return await attemptWebSocketPrint(printer, htmlContent);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Emergency POS: Open cash drawer
+ipcMain.handle('emergency-open-drawer', async () => {
+  try {
+    const config = await getConfiguration();
+    const drawer = config.data?.selectedDrawer;
+
+    if (!drawer) {
+      console.log('No cash drawer configured');
+      return { success: true, message: 'No drawer configured' };
+    }
+
+    return await handleCashDrawer({ printer: drawer });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Emergency POS: Get status
+ipcMain.handle('emergency-get-status', async () => {
+  try {
+    const productCount = productCacheService ? await productCacheService.getProductCount() : 0;
+    const queueStatus = transactionQueueService ? await transactionQueueService.getQueueStatus() : { data: { pending: 0 } };
+
+    return {
+      productCount,
+      queuedCount: queueStatus.data?.pending || 0,
+      lastSync: productCacheService?.lastSync || null
+    };
+  } catch (error) {
+    return { productCount: 0, queuedCount: 0, lastSync: null };
+  }
+});
+
+// Emergency POS: Search customers
+ipcMain.handle('emergency-search-customers', async (event, query) => {
+  try {
+    if (!productCacheService || !productCacheService.apiBaseUrl || !productCacheService.apiKey) {
+      return { success: false, error: 'API not configured', customers: [] };
+    }
+
+    const fetch = (await import('node-fetch')).default;
+    const url = `${productCacheService.apiBaseUrl}/webservices/customers/`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webservicepass: productCacheService.apiKey,
+        action: 'search',
+        q: query,
+        maxrows: 20
+      }),
+      timeout: 10000
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (result.error) {
+      return { success: false, error: result.error, customers: [] };
+    }
+
+    // Result is an array of customers
+    return { success: true, customers: Array.isArray(result) ? result : [] };
+  } catch (error) {
+    console.error('Customer search failed:', error);
+    return { success: false, error: error.message, customers: [] };
+  }
+});
+
+// Emergency POS: Get active staff list
+ipcMain.handle('emergency-get-staff', async () => {
+  try {
+    if (!productCacheService || !productCacheService.apiBaseUrl || !productCacheService.apiKey) {
+      return { success: false, error: 'API not configured', staff: [] };
+    }
+
+    const fetch = (await import('node-fetch')).default;
+    const url = `${productCacheService.apiBaseUrl}/webservices/staff/`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webservicepass: productCacheService.apiKey,
+        action: 'getActiveStaff'
+      }),
+      timeout: 10000
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (result.error) {
+      return { success: false, error: result.error, staff: [] };
+    }
+
+    // Result is an array of staff members
+    return { success: true, staff: Array.isArray(result) ? result : [] };
+  } catch (error) {
+    console.error('Staff fetch failed:', error);
+    return { success: false, error: error.message, staff: [] };
+  }
+});
+
+// Emergency POS: Verify staff PIN
+ipcMain.handle('emergency-verify-staff-pin', async (event, staffId, pin) => {
+  try {
+    if (!productCacheService || !productCacheService.apiBaseUrl || !productCacheService.apiKey) {
+      return { success: false, error: 'API not configured' };
+    }
+
+    const fetch = (await import('node-fetch')).default;
+    const url = `${productCacheService.apiBaseUrl}/webservices/staff/`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webservicepass: productCacheService.apiKey,
+        action: 'verifyPin',
+        staff_id: staffId,
+        pin: pin || ''
+      }),
+      timeout: 10000
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Staff PIN verification failed:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Emergency POS: Get customer purchase limits
+ipcMain.handle('emergency-get-purchase-limits', async (event, customerId, customerType, currentCartWeight) => {
+  try {
+    if (!productCacheService || !productCacheService.apiBaseUrl || !productCacheService.apiKey) {
+      return { success: false, error: 'API not configured', hasLimits: false };
+    }
+
+    const fetch = (await import('node-fetch')).default;
+    const url = `${productCacheService.apiBaseUrl}/webservices/customers/`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webservicepass: productCacheService.apiKey,
+        action: 'getPurchaseLimits',
+        customerId: customerId || '',
+        customerType: customerType || 'recreational',
+        currentCartWeight: currentCartWeight || 0
+      }),
+      timeout: 10000
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Purchase limits fetch failed:', error);
+    return { success: false, error: error.message, hasLimits: false };
+  }
+});
+
+// Emergency POS: Exit
+ipcMain.handle('emergency-exit', async () => {
+  if (emergencyWindow) {
+    emergencyWindow.close();
+  }
+  return { success: true };
+});
+
+// Product Cache: Manual sync
+ipcMain.handle('sync-products', async (event, forceFullSync = false) => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized' };
+  }
+  // Also sync categories first
+  await productCacheService.syncCategories();
+  return await productCacheService.syncProducts(forceFullSync);
+});
+
+// Product Cache: Clear and resync
+ipcMain.handle('clear-product-cache', async () => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized' };
+  }
+  return await productCacheService.clearCache();
+});
+
+// Product Cache: Get status
+ipcMain.handle('get-product-cache-status', async () => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized' };
+  }
+  return { success: true, data: await productCacheService.getStatus() };
+});
+
+// Product Cache: Import products (for testing)
+ipcMain.handle('import-products', async (event, products) => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized' };
+  }
+  return await productCacheService.importProducts(products);
+});
+
+// ==========================================
+// Tax Settings IPC Handlers
+// ==========================================
+
+// Get current tax settings
+ipcMain.handle('get-tax-settings', async () => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized', settings: null };
+  }
+  try {
+    const settings = await productCacheService.getSettings();
+    return { success: true, settings };
+  } catch (error) {
+    console.error('Error getting tax settings:', error);
+    return { success: false, error: error.message, settings: null };
+  }
+});
+
+// Save tax settings locally (for offline mode configuration)
+ipcMain.handle('save-tax-settings', async (event, taxSettings) => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized' };
+  }
+  try {
+    const result = await productCacheService.saveTaxSettings(taxSettings);
+    return result;
+  } catch (error) {
+    console.error('Error saving tax settings:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Sync tax settings from API
+ipcMain.handle('sync-tax-settings', async () => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized' };
+  }
+  try {
+    const result = await productCacheService.syncSettings();
+    if (result.success) {
+      const settings = await productCacheService.getSettings();
+      return { success: true, settings };
+    }
+    return result;
+  } catch (error) {
+    console.error('Error syncing tax settings:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Calculate tax for a transaction
+ipcMain.handle('calculate-tax', async (event, subtotal, customerType, categoryInfo) => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized', tax: 0 };
+  }
+  try {
+    const result = await productCacheService.calculateTax(subtotal, customerType, categoryInfo);
+    return { success: true, ...result };
+  } catch (error) {
+    console.error('Error calculating tax:', error);
+    return { success: false, error: error.message, totalTax: 0, total: subtotal };
+  }
+});
+
+// Get default tax settings structure
+ipcMain.handle('get-default-tax-settings', async () => {
+  if (!productCacheService) {
+    return { success: false, error: 'Product cache not initialized' };
+  }
+  return { success: true, settings: productCacheService.getDefaultTaxSettings() };
+});
+
 // App event handlers
 app.whenReady().then(() => {
     createWindow();
     createTray();
     initializeWebSocketServer();
     
+    // Initialize scanner service
+    scannerService = new ScannerService();
+    console.log('Scanner service initialized');
+
+    // Initialize transaction queue service
+    transactionQueueService = new TransactionQueueService();
+
+    // Load config and initialize queue service
+    const configPath = path.join(__dirname, 'config.json');
+    let queueConfig = {};
+    try {
+      if (fs.existsSync(configPath)) {
+        const configData = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        queueConfig = {
+          apiBaseUrl: configData.apiBaseUrl,
+          apiKey: configData.apiKey,
+          drawerId: configData.selectedDrawerId || null
+        };
+      }
+    } catch (error) {
+      console.log('Could not load config for queue service:', error.message);
+    }
+
+    transactionQueueService.initialize(app.getPath('userData'), queueConfig);
+
+    // Initialize product cache service
+    productCacheService = new ProductCacheService();
+    productCacheService.initialize(app.getPath('userData'), queueConfig);
+    console.log('Product cache service initialized');
+
+    // Forward queue events to renderer
+    transactionQueueService.on('transactionQueued', (data) => {
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('queue-status-update', { event: 'queued', ...data });
+      }
+    });
+
+    transactionQueueService.on('transactionSynced', (data) => {
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('queue-status-update', { event: 'synced', ...data });
+      }
+    });
+
+    transactionQueueService.on('online', () => {
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('queue-status-update', { event: 'online' });
+      }
+      // Notify product cache service to trigger sync
+      if (productCacheService) {
+        productCacheService.setOnlineStatus(true);
+      }
+    });
+
+    transactionQueueService.on('offline', () => {
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('queue-status-update', { event: 'offline' });
+      }
+      // Notify product cache service
+      if (productCacheService) {
+        productCacheService.setOnlineStatus(false);
+      }
+    });
+
+    console.log('Transaction queue service initialized');
+
+    // Forward product cache sync events to renderer
+    productCacheService.on('syncStarted', () => {
+      console.log('Product sync started');
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('sync-status-update', { event: 'started' });
+      }
+    });
+
+    productCacheService.on('syncCompleted', (data) => {
+      console.log('Product sync completed:', data);
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('sync-status-update', { event: 'completed', ...data });
+      }
+    });
+
+    productCacheService.on('syncComplete', (data) => {
+      console.log('Full sync complete:', data);
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('sync-status-update', { event: 'completed', ...data });
+      }
+    });
+
+    productCacheService.on('syncFailed', (error) => {
+      console.log('Sync failed:', error.message);
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('sync-status-update', { event: 'failed', error: error.message });
+      }
+    });
+
+    productCacheService.on('syncError', (error) => {
+      console.log('Sync error:', error.message);
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('sync-status-update', { event: 'failed', error: error.message });
+      }
+    });
+
     // Set up auto-start on Windows login
     if (process.platform === 'win32') {
       // Enable auto-start with hidden flag
@@ -1860,15 +2926,30 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   app.isQuiting = true;
-  
+
   // Clean up tray
   if (tray) {
     tray.destroy();
   }
-  
+
   // Close WebSocket server
   if (wsServer) {
     wsServer.close();
+  }
+
+  // Shutdown transaction queue service
+  if (transactionQueueService) {
+    transactionQueueService.shutdown();
+  }
+
+  // Shutdown product cache service
+  if (productCacheService) {
+    productCacheService.shutdown();
+  }
+
+  // Close emergency window if open
+  if (emergencyWindow) {
+    emergencyWindow.close();
   }
 });
 

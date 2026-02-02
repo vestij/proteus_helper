@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>POS Helper Integration Example</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .status { padding: 10px; border-radius: 4px; margin-bottom: 20px; }
+        .status.connected { background: #d4edda; color: #155724; }
+        .status.disconnected { background: #f8d7da; color: #721c24; }
+        .section { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        h2 { margin-top: 0; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        pre { background: #f5f5f5; padding: 15px; overflow: auto; border-radius: 4px; }
+        .result { margin-top: 10px; padding: 10px; background: #f0f0f0; border-radius: 4px; }
+        .queue-info { display: flex; gap: 20px; margin-top: 10px; }
+        .queue-stat { text-align: center; padding: 10px 20px; background: #e9ecef; border-radius: 4px; }
+        .queue-stat .value { font-size: 24px; font-weight: bold; }
+        .queue-stat .label { font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <h1>Proteus POS Helper Integration</h1>
+
+    <!-- Connection Status -->
+    <div id="connectionStatus" class="status disconnected">
+        Connecting to POS Helper...
+    </div>
+
+    <!-- Queue Status -->
+    <div class="section">
+        <h2>Transaction Queue Status</h2>
+        <div class="queue-info">
+            <div class="queue-stat">
+                <div class="value" id="pendingCount">-</div>
+                <div class="label">Pending</div>
+            </div>
+            <div class="queue-stat">
+                <div class="value" id="syncedCount">-</div>
+                <div class="label">Synced Today</div>
+            </div>
+            <div class="queue-stat">
+                <div class="value" id="onlineStatus">-</div>
+                <div class="label">Network</div>
+            </div>
+        </div>
+        <button onclick="refreshQueueStatus()">Refresh Status</button>
+        <button onclick="retryQueue()">Retry Queue</button>
+    </div>
+
+    <!-- Transaction Example -->
+    <div class="section">
+        <h2>Submit Transaction</h2>
+        <p>This will submit a test transaction. If the network is down, it will be queued automatically.</p>
+        <button onclick="submitTestTransaction()">Submit Test Sale ($99.99)</button>
+        <button onclick="submitTestTransaction('refund')">Submit Test Refund</button>
+        <div id="transactionResult" class="result" style="display:none;"></div>
+    </div>
+
+    <!-- Print Example -->
+    <div class="section">
+        <h2>Print Receipt</h2>
+        <button onclick="printTestReceipt()">Print Test Receipt</button>
+        <button onclick="getPrinters()">List Printers</button>
+        <div id="printResult" class="result" style="display:none;"></div>
+    </div>
+
+    <!-- Cash Drawer Example -->
+    <div class="section">
+        <h2>Cash Drawer</h2>
+        <button onclick="openDrawer()">Open Cash Drawer</button>
+        <div id="drawerResult" class="result" style="display:none;"></div>
+    </div>
+
+    <!-- Include the POS Helper Client -->
+    <script src="pos-helper-client.js"></script>
+
+    <script>
+        // Initialize the POS Helper Client
+        const posHelper = new POSHelperClient({
+            // Your SaaS API URL (fallback when helper unavailable)
+            apiBaseUrl: 'https://dev4.proteuserp.com/420demo',
+            apiKey: 'your-api-key-here',
+
+            // Connection status callback
+            onConnectionChange: (connected, reason) => {
+                const el = document.getElementById('connectionStatus');
+                if (connected) {
+                    el.className = 'status connected';
+                    el.textContent = 'Connected to POS Helper - Offline mode available';
+                    refreshQueueStatus();
+                } else {
+                    el.className = 'status disconnected';
+                    el.textContent = `POS Helper not connected (${reason}) - Direct API mode`;
+                }
+            },
+
+            // Transaction queued callback
+            onTransactionQueued: (info) => {
+                console.log('Transaction queued:', info);
+                showResult('transactionResult',
+                    `Transaction QUEUED (position ${info.position}). Will sync when online.`,
+                    'warning'
+                );
+                refreshQueueStatus();
+            },
+
+            // Transaction synced callback
+            onTransactionSynced: (info) => {
+                console.log('Transaction synced:', info);
+                refreshQueueStatus();
+            }
+        });
+
+        // Refresh queue status
+        async function refreshQueueStatus() {
+            try {
+                const result = await posHelper.getQueueStatus();
+                if (result.success) {
+                    document.getElementById('pendingCount').textContent = result.data.pending;
+                    document.getElementById('syncedCount').textContent = result.data.syncedToday;
+                    document.getElementById('onlineStatus').textContent =
+                        result.data.isOnline ? 'Online' : 'Offline';
+                }
+            } catch (e) {
+                console.log('Could not get queue status:', e.message);
+            }
+        }
+
+        // Retry queue
+        async function retryQueue() {
+            try {
+                const result = await posHelper.retryQueue();
+                alert(`Queue processed: ${result.processed} synced, ${result.failed} failed`);
+                refreshQueueStatus();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        // Submit test transaction
+        async function submitTestTransaction(type = 'sale') {
+            const resultEl = document.getElementById('transactionResult');
+            resultEl.style.display = 'block';
+            resultEl.textContent = 'Submitting...';
+
+            try {
+                const result = await posHelper.submitTransaction({
+                    type: type,
+                    items: [
+                        { sku: 'TEST-001', name: 'Test Item', qty: 1, price: 89.99 },
+                        { sku: 'TEST-002', name: 'Another Item', qty: 2, price: 5.00 }
+                    ],
+                    subtotal: 99.99,
+                    tax: 8.25,
+                    total: 108.24,
+                    paymentMethod: 'cash',
+                    cashierId: 'DEMO',
+                    registerId: 'POS-01'
+                });
+
+                if (result.queued) {
+                    showResult('transactionResult',
+                        `QUEUED at position ${result.queuePosition} - will sync when online`,
+                        'warning'
+                    );
+                } else {
+                    showResult('transactionResult',
+                        `SUCCESS! Transaction ID: ${result.data?.transactionId || 'N/A'}`,
+                        'success'
+                    );
+                }
+            } catch (error) {
+                showResult('transactionResult', `ERROR: ${error.message}`, 'error');
+            }
+
+            refreshQueueStatus();
+        }
+
+        // Print test receipt
+        async function printTestReceipt() {
+            const resultEl = document.getElementById('printResult');
+            resultEl.style.display = 'block';
+            resultEl.textContent = 'Printing...';
+
+            try {
+                const receiptHTML = `
+                    <div style="font-family: monospace; width: 280px;">
+                        <h2 style="text-align: center;">TEST RECEIPT</h2>
+                        <p style="text-align: center;">Proteus POS Helper Demo</p>
+                        <hr>
+                        <p>Test Item x1 .............. $89.99</p>
+                        <p>Another Item x2 ........... $10.00</p>
+                        <hr>
+                        <p><strong>Subtotal: $99.99</strong></p>
+                        <p>Tax: $8.25</p>
+                        <p><strong>TOTAL: $108.24</strong></p>
+                        <hr>
+                        <p style="text-align: center;">Thank you!</p>
+                        <p style="text-align: center; font-size: 10px;">${new Date().toLocaleString()}</p>
+                    </div>
+                `;
+
+                const result = await posHelper.printReceipt(receiptHTML);
+                showResult('printResult',
+                    result.success ? 'Receipt sent to printer!' : `Error: ${result.error}`,
+                    result.success ? 'success' : 'error'
+                );
+            } catch (error) {
+                showResult('printResult', `ERROR: ${error.message}`, 'error');
+            }
+        }
+
+        // Get printers
+        async function getPrinters() {
+            const resultEl = document.getElementById('printResult');
+            resultEl.style.display = 'block';
+
+            try {
+                const result = await posHelper.getPrinters();
+                if (result.success && result.printers) {
+                    const printerList = result.printers.map(p => `- ${p.name} (${p.status})`).join('\n');
+                    resultEl.textContent = 'Available Printers:\n' + printerList;
+                } else {
+                    resultEl.textContent = 'No printers found';
+                }
+            } catch (error) {
+                showResult('printResult', `ERROR: ${error.message}`, 'error');
+            }
+        }
+
+        // Open cash drawer
+        async function openDrawer() {
+            const resultEl = document.getElementById('drawerResult');
+            resultEl.style.display = 'block';
+            resultEl.textContent = 'Opening drawer...';
+
+            try {
+                const result = await posHelper.openCashDrawer();
+                showResult('drawerResult',
+                    result.success ? 'Cash drawer opened!' : `Error: ${result.error}`,
+                    result.success ? 'success' : 'error'
+                );
+            } catch (error) {
+                showResult('drawerResult', `ERROR: ${error.message}`, 'error');
+            }
+        }
+
+        // Helper to show results
+        function showResult(elementId, message, type) {
+            const el = document.getElementById(elementId);
+            el.style.display = 'block';
+            el.textContent = message;
+            el.style.background = type === 'success' ? '#d4edda' :
+                                  type === 'warning' ? '#fff3cd' :
+                                  type === 'error' ? '#f8d7da' : '#f0f0f0';
+        }
+
+        // Refresh queue status every 30 seconds
+        setInterval(refreshQueueStatus, 30000);
+    </script>
+</body>
+</html>
