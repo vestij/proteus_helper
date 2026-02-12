@@ -1,6 +1,10 @@
 const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 
+// Allow self-signed/updated SSL certs for node-fetch calls to our own servers
+// (matches the Electron certificate-error bypass already in place for webContents)
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 // Keep a global reference of the window object and tray
 let mainWindow;
 let emergencyWindow;
@@ -2847,9 +2851,9 @@ app.whenReady().then(() => {
       }
     });
 
-    transactionQueueService.on('offline', () => {
+    transactionQueueService.on('offline', (data) => {
       if (mainWindow && mainWindow.webContents) {
-        mainWindow.webContents.send('queue-status-update', { event: 'offline' });
+        mainWindow.webContents.send('queue-status-update', { event: 'offline', reason: data?.reason });
       }
       // Notify product cache service
       if (productCacheService) {
