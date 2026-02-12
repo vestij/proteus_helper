@@ -135,3 +135,14 @@ dist
 .yarn/install-state.gz
 .pnp.*
 config.json
+
+# Temp files
+temp/
+nul
+tmpclaude-*
+
+# Claude Code
+.claude/
+
+# Documentation/notes
+*.md
