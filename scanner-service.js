@@ -1180,7 +1180,7 @@ Would you like me to add a "Upload Existing File" feature for files scanned with
             formData.append('userId', metadata.userId || '0');
 
             // Use the same fetch approach as your existing drawer API calls
-            const fetch = (await import('node-fetch')).default;
+            const fetch = require('node-fetch');
             
             const response = await fetch(`${apiBaseUrl}/webservices/image_upload.cfm`, {
                 method: 'POST',

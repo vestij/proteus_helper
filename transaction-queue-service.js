@@ -185,7 +185,7 @@ class TransactionQueueService extends EventEmitter {
         }
 
         try {
-            const fetch = (await import('node-fetch')).default;
+            const fetch = require('node-fetch');
 
             // Format transaction data for Proteus orders API (addInvoice action)
             const orderData = this.formatForOrdersAPI(transaction);
@@ -831,7 +831,7 @@ class TransactionQueueService extends EventEmitter {
         // If we have API config, also check API reachability
         if (this.apiBaseUrl && this.apiKey && !this.testMode) {
             try {
-                const fetch = (await import('node-fetch')).default;
+                const fetch = require('node-fetch');
                 const controller = new AbortController();
                 const timeout = setTimeout(() => controller.abort(), 5000);
 

@@ -351,6 +351,40 @@
         .footer-version {
             font-size: 10px;
             color: #666;
+            cursor: default;
+        }
+
+        /* Update Banner */
+        .update-banner {
+            display: none;
+            background: linear-gradient(135deg, #0f3460, #1a5276);
+            padding: 8px 16px;
+            text-align: center;
+            font-size: 12px;
+            color: #eee;
+            border-bottom: 1px solid #1a5276;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .update-banner.visible {
+            display: flex;
+        }
+
+        .update-banner .btn-update {
+            background: #27ae60;
+            border: none;
+            color: #fff;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .update-banner .btn-update:hover {
+            background: #2ecc71;
         }
 
         /* Queue List */
@@ -774,6 +808,18 @@
                     </div>
                 </div>
 
+                <!-- Updates -->
+                <div class="settings-section">
+                    <div class="settings-header">
+                        <span>🔄</span> Updates
+                    </div>
+                    <div class="settings-content">
+                        <div class="button-row">
+                            <button class="btn-secondary" id="checkForUpdates">Check for Updates</button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Debug -->
                 <div class="settings-section">
                     <div class="settings-header">
@@ -788,6 +834,12 @@
             </div>
         </div>
 
+        <!-- Update Banner -->
+        <div class="update-banner" id="updateBanner">
+            <span id="updateBannerText">A new version is available</span>
+            <button class="btn-update" id="updateBannerBtn" style="display:none;">Restart & Update</button>
+        </div>
+
         <!-- Footer -->
         <div class="footer">
             <div class="footer-drawer">
@@ -797,7 +849,7 @@
                     <div class="location" id="footerDrawerLocation">Configure in settings</div>
                 </div>
             </div>
-            <div class="footer-version">v1.0.0</div>
+            <div class="footer-version" id="footerVersion">v2.0.0</div>
         </div>
     </div>
 
@@ -850,10 +902,17 @@
         const refreshScanners = document.getElementById('refreshScanners');
         const testScan = document.getElementById('testScan');
         const openDevTools = document.getElementById('openDevTools');
+        const checkForUpdates = document.getElementById('checkForUpdates');
 
         // Footer
         const footerDrawerName = document.getElementById('footerDrawerName');
         const footerDrawerLocation = document.getElementById('footerDrawerLocation');
+        const footerVersion = document.getElementById('footerVersion');
+
+        // Update banner
+        const updateBanner = document.getElementById('updateBanner');
+        const updateBannerText = document.getElementById('updateBannerText');
+        const updateBannerBtn = document.getElementById('updateBannerBtn');
 
         // ===================
         // Navigation
@@ -1552,6 +1611,40 @@
         });
 
         // ===================
+        // Auto-Update
+        // ===================
+        ipcRenderer.on('update-available', (e, data) => {
+            updateBanner.classList.add('visible');
+            updateBannerText.textContent = `Downloading v${data.version}...`;
+            updateBannerBtn.style.display = 'none';
+            addLogEntry(`Update v${data.version} available, downloading...`, 'info');
+        });
+
+        ipcRenderer.on('download-progress', (e, data) => {
+            updateBannerText.textContent = `Downloading update... ${data.percent}%`;
+        });
+
+        ipcRenderer.on('update-downloaded', (e, data) => {
+            updateBannerText.textContent = `v${data.version} ready to install`;
+            updateBannerBtn.style.display = 'inline-block';
+            addLogEntry(`Update v${data.version} downloaded and ready to install`, 'success');
+        });
+
+        ipcRenderer.on('update-error', (e, data) => {
+            updateBanner.classList.remove('visible');
+            addLogEntry(`Update check failed: ${data.message}`, 'warning');
+        });
+
+        updateBannerBtn.addEventListener('click', () => {
+            ipcRenderer.invoke('install-update');
+        });
+
+        checkForUpdates.addEventListener('click', () => {
+            addLogEntry('Checking for updates...', 'info');
+            ipcRenderer.invoke('check-for-updates');
+        });
+
+        // ===================
         // Other
         // ===================
         clearLog.addEventListener('click', () => {
@@ -1565,6 +1658,11 @@
         // Initialize
         // ===================
         document.addEventListener('DOMContentLoaded', () => {
+            // Show current version
+            ipcRenderer.invoke('get-app-version').then(v => {
+                footerVersion.textContent = `v${v}`;
+            });
+
             loadApiConfig();
             loadPrinters();
             loadScanners();

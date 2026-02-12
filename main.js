@@ -1,9 +1,36 @@
 const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 
 // Allow self-signed/updated SSL certs for node-fetch calls to our own servers
 // (matches the Electron certificate-error bypass already in place for webContents)
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+// Config path helper: write to userData, read from userData with __dirname fallback
+function getConfigPath(forWrite = false) {
+  const fs = require('fs');
+  const userDataConfig = path.join(app.getPath('userData'), 'config.json');
+  if (forWrite) return userDataConfig;
+  if (fs.existsSync(userDataConfig)) return userDataConfig;
+  const localConfig = path.join(__dirname, 'config.json');
+  if (fs.existsSync(localConfig)) return localConfig;
+  return userDataConfig;
+}
+
+// Prevent multiple instances - must be before anything else
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+  process.exit(0);
+}
+
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
 
 // Keep a global reference of the window object and tray
 let mainWindow;
@@ -159,9 +186,8 @@ async function getConfiguration() {
       const { app } = require('electron');
       
       try {
-        const userDataPath = app.getPath('userData');
-        const configPath = path.join(userDataPath, 'config.json');
-        
+        const configPath = getConfigPath();
+
         if (fs.existsSync(configPath)) {
           console.log('Also found config.json file, merging...');
           const fileData = fs.readFileSync(configPath, 'utf8');
@@ -1282,7 +1308,7 @@ async function handleScanToFolder(data) {
     // Get API key from config file
     let apiKey = null;
     try {
-      const configFilePath = path.join(__dirname, 'config.json');
+      const configFilePath = getConfigPath();
       const configData = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
       apiKey = configData.apiKey;
     } catch (error) {
@@ -2070,7 +2096,7 @@ ipcMain.handle('save-config', async (event, config) => {
   try {
     const fs = require('fs');
     const path = require('path');
-    const configPath = path.join(__dirname, 'config.json');
+    const configPath = getConfigPath(true);
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     console.log('Configuration saved to', configPath);
@@ -2158,7 +2184,7 @@ ipcMain.handle('scan-and-upload', async (event, scannerId, options = {}, metadat
   // Get API key from config file or storage  
   let apiKey = null;
   try {
-    const configFilePath = path.join(__dirname, 'config.json');
+    const configFilePath = getConfigPath();
     const configData = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
     apiKey = configData.apiKey;
   } catch (error) {
@@ -2538,7 +2564,7 @@ ipcMain.handle('emergency-search-customers', async (event, query) => {
       return { success: false, error: 'API not configured', customers: [] };
     }
 
-    const fetch = (await import('node-fetch')).default;
+    const fetch = require('node-fetch');
     const url = `${productCacheService.apiBaseUrl}/webservices/customers/`;
 
     const response = await fetch(url, {
@@ -2578,7 +2604,7 @@ ipcMain.handle('emergency-get-staff', async () => {
       return { success: false, error: 'API not configured', staff: [] };
     }
 
-    const fetch = (await import('node-fetch')).default;
+    const fetch = require('node-fetch');
     const url = `${productCacheService.apiBaseUrl}/webservices/staff/`;
 
     const response = await fetch(url, {
@@ -2616,7 +2642,7 @@ ipcMain.handle('emergency-verify-staff-pin', async (event, staffId, pin) => {
       return { success: false, error: 'API not configured' };
     }
 
-    const fetch = (await import('node-fetch')).default;
+    const fetch = require('node-fetch');
     const url = `${productCacheService.apiBaseUrl}/webservices/staff/`;
 
     const response = await fetch(url, {
@@ -2650,7 +2676,7 @@ ipcMain.handle('emergency-get-purchase-limits', async (event, customerId, custom
       return { success: false, error: 'API not configured', hasLimits: false };
     }
 
-    const fetch = (await import('node-fetch')).default;
+    const fetch = require('node-fetch');
     const url = `${productCacheService.apiBaseUrl}/webservices/customers/`;
 
     const response = await fetch(url, {
@@ -2792,11 +2818,62 @@ ipcMain.handle('get-default-tax-settings', async () => {
   return { success: true, settings: productCacheService.getDefaultTaxSettings() };
 });
 
+// ===================
+// Auto-Updater IPC
+// ===================
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
+});
+
+ipcMain.handle('install-update', () => {
+  autoUpdater.quitAndInstall();
+});
+
+ipcMain.handle('check-for-updates', () => {
+  autoUpdater.checkForUpdatesAndNotify();
+});
+
 // App event handlers
 app.whenReady().then(() => {
     createWindow();
     createTray();
     initializeWebSocketServer();
+
+    // Auto-updater setup
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('update-available', (info) => {
+      console.log('Update available:', info.version);
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('update-available', { version: info.version });
+      }
+    });
+
+    autoUpdater.on('download-progress', (progress) => {
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('download-progress', { percent: Math.round(progress.percent) });
+      }
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+      console.log('Update downloaded:', info.version);
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('update-downloaded', { version: info.version });
+      }
+    });
+
+    autoUpdater.on('error', (err) => {
+      console.log('Auto-updater error:', err.message);
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('update-error', { message: err.message });
+      }
+    });
+
+    // Check for updates after a short delay to let the app fully initialize
+    setTimeout(() => {
+      autoUpdater.checkForUpdatesAndNotify();
+    }, 5000);
     
     // Initialize scanner service
     scannerService = new ScannerService();
@@ -2806,7 +2883,7 @@ app.whenReady().then(() => {
     transactionQueueService = new TransactionQueueService();
 
     // Load config and initialize queue service
-    const configPath = path.join(__dirname, 'config.json');
+    const configPath = getConfigPath();
     let queueConfig = {};
     try {
       if (fs.existsSync(configPath)) {
@@ -2963,18 +3040,3 @@ app.on('certificate-error', (event, webContents, url, error, certificate, callba
   callback(true);
 });
 
-// Prevent multiple instances
-const gotTheLock = app.requestSingleInstanceLock();
-
-if (!gotTheLock) {
-  // Another instance is already running, quit this one
-  app.quit();
-} else {
-  // This is the first instance
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
-    // Someone tried to run a second instance, focus our window instead
-    if (mainWindow) {
-      showWindow();
-    }
-  });
-}

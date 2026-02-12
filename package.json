@@ -1,6 +1,6 @@
 {
     "name": "ProteusPOS-helper",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "description": "Proteus POS Companion",
     "main": "main.js",
     "author": "ProteusERP",
@@ -27,12 +27,13 @@
         "system-tray"
     ],
     "dependencies": {
-        "node-thermal-printer": "^4.4.4",
-        "ws": "^8.14.2",
-        "sharp": "^0.33.5",
+        "electron-updater": "^6.7.3",
         "form-data": "^4.0.0",
-        "node-fetch": "^3.3.2",
-        "nedb-promises": "^6.2.3"
+        "nedb-promises": "^6.2.3",
+        "node-fetch": "^2.7.0",
+        "node-thermal-printer": "^4.4.4",
+        "sharp": "^0.33.5",
+        "ws": "^8.14.2"
     },
     "devDependencies": {
         "electron": "^27.3.11",
@@ -47,11 +48,12 @@
         "files": [
             "main.js",
             "index.html",
+            "emergency-pos.html",
             "scanner-service.js",
             "transaction-queue-service.js",
+            "product-cache-service.js",
             "web-pos-integration/**/*",
             "assets/**/*",
-            "temp/**/*",
             "node_modules/**/*"
         ],
         "win": {
@@ -76,6 +78,11 @@
             "shortcutName": "Proteus POS Companion",
             "runAfterFinish": true,
             "installerSidebar": "assets/installer-sidebar.bmp"
+        },
+        "publish": {
+            "provider": "github",
+            "owner": "vestij",
+            "repo": "proteus_helper"
         }
     },
     "homepage": "https://proteuserp.com"

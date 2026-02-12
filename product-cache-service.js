@@ -194,7 +194,7 @@ class ProductCacheService extends EventEmitter {
         console.log('Drawer ID:', this.drawerId);
 
         try {
-            const fetch = (await import('node-fetch')).default;
+            const fetch = require('node-fetch');
 
             // Include drawer ID if configured to get location-specific tax rates
             let url = `${this.apiBaseUrl}/webservices/categories_json.cfm?webservicepass=${encodeURIComponent(this.apiKey)}&action=getSettings`;
@@ -561,7 +561,7 @@ class ProductCacheService extends EventEmitter {
         console.log('=== SYNCING CATEGORIES ===');
 
         try {
-            const fetch = (await import('node-fetch')).default;
+            const fetch = require('node-fetch');
 
             // Categories endpoint uses query params
             const url = `${this.apiBaseUrl}/webservices/categories_json.cfm?webservicepass=${encodeURIComponent(this.apiKey)}&action=listcategories`;
@@ -658,7 +658,7 @@ class ProductCacheService extends EventEmitter {
         console.log('=== SYNCING PACKAGES ===');
 
         try {
-            const fetch = (await import('node-fetch')).default;
+            const fetch = require('node-fetch');
 
             // Use existing packages API endpoint (POST-based)
             const url = `${this.apiBaseUrl}/webservices/items/packages/`;
@@ -924,7 +924,7 @@ class ProductCacheService extends EventEmitter {
         console.log('Force full sync:', forceFullSync);
 
         try {
-            const fetch = (await import('node-fetch')).default;
+            const fetch = require('node-fetch');
 
             // Proteus items API is POST-based
             const url = `${this.apiBaseUrl}/webservices/items/`;
