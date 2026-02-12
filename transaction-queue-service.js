@@ -8,6 +8,7 @@ class TransactionQueueService extends EventEmitter {
         super();
         this.db = null;
         this.isOnline = true;
+        this.statusReason = null; // null = ok, 'auth_failed', 'server_error', 'no_network', 'api_unreachable', 'not_configured'
         this.retryTimer = null;
         this.healthCheckTimer = null;
         this.apiBaseUrl = null;
@@ -697,6 +698,7 @@ class TransactionQueueService extends EventEmitter {
                 syncedToday: completedToday,
                 lastSync: this.stats.lastSync,
                 isOnline: this.isOnline,
+                statusReason: this.statusReason,
                 testMode: this.testMode
             }
         };
@@ -822,7 +824,7 @@ class TransactionQueueService extends EventEmitter {
         const electronOnline = net.isOnline();
 
         if (!electronOnline) {
-            this.setOffline();
+            this.setOffline('no_network');
             return;
         }
 
@@ -844,14 +846,21 @@ class TransactionQueueService extends EventEmitter {
                 if (response.ok || response.status === 404) {
                     // 404 is ok - endpoint might not exist but API is reachable
                     this.setOnline();
+                } else if (response.status === 401 || response.status === 403) {
+                    this.setOffline('auth_failed');
                 } else if (response.status >= 500) {
-                    this.setOffline();
+                    this.setOffline('server_error');
+                } else {
+                    this.setOffline('api_unreachable');
                 }
             } catch (error) {
-                this.setOffline();
+                this.setOffline('api_unreachable');
             }
+        } else if (!this.apiBaseUrl || !this.apiKey) {
+            // API not configured
+            this.setOffline('not_configured');
         } else {
-            // No API config or test mode - use Electron's status
+            // Test mode - use Electron's status
             if (electronOnline) {
                 this.setOnline();
             }
@@ -862,21 +871,27 @@ class TransactionQueueService extends EventEmitter {
      * Mark as online
      */
     setOnline() {
-        if (!this.isOnline) {
+        const wasOffline = !this.isOnline;
+        this.isOnline = true;
+        this.statusReason = null;
+        if (wasOffline) {
             console.log('Network status: ONLINE');
-            this.isOnline = true;
             this.emit('online');
         }
     }
 
     /**
      * Mark as offline
+     * @param {string} reason - 'no_network', 'auth_failed', 'server_error', 'api_unreachable', 'not_configured'
      */
-    setOffline() {
-        if (this.isOnline) {
-            console.log('Network status: OFFLINE');
-            this.isOnline = false;
-            this.emit('offline');
+    setOffline(reason = 'unknown') {
+        const wasOnline = this.isOnline;
+        const reasonChanged = this.statusReason !== reason;
+        this.isOnline = false;
+        this.statusReason = reason;
+        if (wasOnline || reasonChanged) {
+            console.log(`Network status: OFFLINE (${reason})`);
+            this.emit('offline', { reason });
         }
     }
 

@@ -52,6 +52,7 @@
         }
 
         .status-dot.offline { background: #e74c3c; }
+        .status-dot.auth-error { background: #f39c12; }
 
         .header-title {
             font-size: 14px;
@@ -1438,6 +1439,24 @@
         // ===================
         // Queue Functions
         // ===================
+        function getStatusDisplay(isOnline, reason) {
+            if (isOnline) return { label: 'Online', badgeClass: 'online', dotClass: '' };
+            switch (reason) {
+                case 'auth_failed':
+                    return { label: 'API Key Invalid', badgeClass: 'warning', dotClass: 'auth-error' };
+                case 'not_configured':
+                    return { label: 'Not Configured', badgeClass: 'warning', dotClass: 'auth-error' };
+                case 'server_error':
+                    return { label: 'Server Error', badgeClass: 'offline', dotClass: 'offline' };
+                case 'no_network':
+                    return { label: 'No Network', badgeClass: 'offline', dotClass: 'offline' };
+                case 'api_unreachable':
+                    return { label: 'API Unreachable', badgeClass: 'offline', dotClass: 'offline' };
+                default:
+                    return { label: 'Offline', badgeClass: 'offline', dotClass: 'offline' };
+            }
+        }
+
         async function refreshQueueStatus() {
             try {
                 const result = await ipcRenderer.invoke('get-queue-status');
@@ -1451,15 +1470,16 @@
                     syncedToday.textContent = d.syncedToday;
                     lastSyncTime.textContent = d.lastSync ? new Date(d.lastSync).toLocaleTimeString() : 'Never';
 
-                    queueOnlineStatus.textContent = d.isOnline ? 'Online' : 'Offline';
-                    queueOnlineStatus.className = `status-badge ${d.isOnline ? 'online' : 'offline'}`;
-                    statusDot.classList.toggle('offline', !d.isOnline);
+                    const statusInfo = getStatusDisplay(d.isOnline, d.statusReason);
+                    queueOnlineStatus.textContent = statusInfo.label;
+                    queueOnlineStatus.className = `status-badge ${statusInfo.badgeClass}`;
+                    statusDot.className = `status-dot ${statusInfo.dotClass}`;
 
                     // Queue page
                     queuePendingCount.textContent = d.pending;
                     queueSyncedCount.textContent = d.syncedToday;
-                    queueStatusBadge.textContent = d.isOnline ? 'Online' : 'Offline';
-                    queueStatusBadge.className = `status-badge ${d.isOnline ? 'online' : 'offline'}`;
+                    queueStatusBadge.textContent = statusInfo.label;
+                    queueStatusBadge.className = `status-badge ${statusInfo.badgeClass}`;
                     testModeCard.style.display = d.testMode ? 'block' : 'none';
                 }
             } catch (e) {}
@@ -1501,7 +1521,16 @@
 
         ipcRenderer.on('queue-status-update', (e, data) => {
             if (data.event === 'online') addLogEntry('Network restored', 'success');
-            if (data.event === 'offline') addLogEntry('Network offline', 'warning');
+            if (data.event === 'offline') {
+                const reasons = {
+                    auth_failed: 'API key invalid or rejected',
+                    not_configured: 'API not configured',
+                    server_error: 'Server error',
+                    no_network: 'No network connection',
+                    api_unreachable: 'API unreachable'
+                };
+                addLogEntry(reasons[data.reason] || 'Network offline', data.reason === 'auth_failed' ? 'error' : 'warning');
+            }
             refreshQueueStatus();
         });
 
